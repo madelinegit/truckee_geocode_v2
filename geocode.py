@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 from dotenv import load_dotenv
 
+# Load API key from .env
 load_dotenv()
 API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
@@ -11,13 +12,7 @@ INPUT_FILE = "data/properties_raw.csv"
 OUTPUT_FILE = "data/properties_geocoded_clean.csv"
 FAIL_FILE = "data/geocode_failures.csv"
 
-# Truckee bounding box
-MIN_LAT = 39.28
-MAX_LAT = 39.42
-MIN_LNG = -120.30
-MAX_LNG = -120.05
-
-SLEEP_TIME = 0.2
+SLEEP_TIME = 0.2  # Helps avoid rate limits
 
 
 def geocode_address(address):
@@ -37,6 +32,7 @@ def geocode_address(address):
 
     result = data["results"][0]
 
+    # Reject only clearly low quality matches
     location_type = result["geometry"]["location_type"]
     if location_type == "APPROXIMATE":
         return None, None, "LOW_PRECISION"
@@ -44,17 +40,17 @@ def geocode_address(address):
     lat = result["geometry"]["location"]["lat"]
     lng = result["geometry"]["location"]["lng"]
 
-    if not (MIN_LAT <= lat <= MAX_LAT and MIN_LNG <= lng <= MAX_LNG):
-        return None, None, "OUTSIDE_TRUCKEE"
-
     return lat, lng, None
 
 
 def main():
     df = pd.read_csv(INPUT_FILE)
 
-    # Remove old coordinate columns completely
-    df = df.drop(columns=[col for col in df.columns if col.lower() in ["latitude", "longitude"]], errors="ignore")
+    # Remove any existing lat/long columns completely
+    df = df.drop(
+        columns=[col for col in df.columns if col.lower() in ["latitude", "longitude"]],
+        errors="ignore"
+    )
 
     df["Latitude"] = None
     df["Longitude"] = None
@@ -68,9 +64,11 @@ def main():
 
         lat, lng, error = geocode_address(address)
 
-        if lat and lng:
+        if lat is not None and lng is not None:
             df.at[index, "Latitude"] = lat
             df.at[index, "Longitude"] = lng
+
+            # Save progress continuously
             df.to_csv(OUTPUT_FILE, index=False)
             print("Saved.")
         else:
